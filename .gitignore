@@ -2,3 +2,4 @@
 *.jpg
 *.tfrec
 .vscode
+.ipynb_checkpoints
