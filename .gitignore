@@ -1,5 +1,7 @@
 *.zip
 *.jpg
 *.tfrec
+*.csv
 .vscode
 .ipynb_checkpoints
+.idea
