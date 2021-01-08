@@ -2,6 +2,7 @@
 *.jpg
 *.tfrec
 *.csv
+*.npy
 .vscode
 .ipynb_checkpoints
 .idea

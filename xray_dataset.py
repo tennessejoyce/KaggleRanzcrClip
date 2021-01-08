@@ -5,6 +5,7 @@ import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+
 def read_image(image_file, resolution):
     """Reads in the xray image from a file, resizes, and returns an nparray."""
     try:
@@ -13,7 +14,7 @@ def read_image(image_file, resolution):
         return np.array(image)
     except:
         print(f'Failed to load {image_file}')
-        return np.zeros((resolution, resolution))
+        return np.zeros((resolution, resolution), dtype=np.uint8)
 
 
 def read_all_images(stage, instance_ids, resolution):
@@ -30,7 +31,7 @@ def read_all_images(stage, instance_ids, resolution):
     return image_data
 
 
-def load_dataset(stage='train', resolution=224, validation_fraction=0, random_state=0):
+def load_dataset(stage='train', resolution=224, val_fraction=0, random_state=0):
     """Loads both the images and the binary targets into a Pytorch Dataset object.
     Also splits training data into traning and validation, keeping rows from the same
     patient together to avoid leakage. Validation fraction specifies the fraction of
@@ -43,11 +44,14 @@ def load_dataset(stage='train', resolution=224, validation_fraction=0, random_st
     target_data = df.values
     image_data = read_all_images(stage='train', instance_ids=df.index, resolution=resolution)
     # If we're not doing validation, just return one dataset.
-    if validation_fraction == 0:
+    if val_fraction == 0:
         return XRayDataset(image_data, target_data)
     # Otherwise split patients into train and validation, and return two datasets.
     else:
-        validation_patients = patient_id.unique().sample(frac=validation_fraction, random_state=random_state)
+        unique_ids = patient_id.unique()
+        val_size = int(val_fraction * len(unique_ids))
+        rng = np.random.default_rng(random_state)
+        validation_patients = rng.choice(unique_ids, val_size)
         validation_idx = patient_id.isin(validation_patients)
         train_idx = ~validation_idx
         train_dataset = XRayDataset(image_data[train_idx], target_data[train_idx])
@@ -60,11 +64,13 @@ class XRayDataset (Dataset):
     in memory as numpy arrays."""
     def __init__(self, image_data, target_data):
         assert image_data.shape[0] == target_data.shape[0]
-        self.image_data = image_data
         self.target_data = target_data
+        # Add an extra index for channels (gray scale).
+        self.image_data = image_data[:, None, :, :]
 
-    def __getitem__(self,key):
-        return self.image_data[key], self.target_data[key]
+    def __getitem__(self, key):
+        image_batch = self.image_data[key].astype(np.float64)
+        return image_batch, self.target_data[key]
 
     def __len__(self):
         return self.image_data.shape[0]
