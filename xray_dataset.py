@@ -64,13 +64,17 @@ class XRayDataset (Dataset):
     in memory as numpy arrays."""
     def __init__(self, image_data, target_data):
         assert image_data.shape[0] == target_data.shape[0]
-        self.target_data = target_data
+        self.target_data = torch.from_numpy(target_data)
         # Add an extra index for channels (gray scale).
-        self.image_data = image_data[:, None, :, :]
+        self.image_data = torch.from_numpy(image_data[:, None, :, :])
 
     def __getitem__(self, key):
-        image_batch = self.image_data[key].astype(np.float64)
+        image_batch = self.image_data[key]
         return image_batch, self.target_data[key]
 
     def __len__(self):
         return self.image_data.shape[0]
+
+    def ready(self, device):
+        self.target_data = self.target_data.float().to(device)
+        self.image_data = self.image_data.float().to(device)
