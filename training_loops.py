@@ -20,9 +20,11 @@ def fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_
                 output = model(X)
                 loss = loss_function(output, y)
                 val_metric_tracker.add(output.item(), y.item(), loss.item())
+        # End of epoch
         train_metric_tracker.end_epoch()
         val_metric_tracker.end_epoch()
-        if early_stopping_tracker(metric_tracker.val_metric[-1]):
+        # Check for early stopping condition
+        if early_stopping_tracker(val_metric_tracker.loss_over_time[-1]):
             break
 
 
