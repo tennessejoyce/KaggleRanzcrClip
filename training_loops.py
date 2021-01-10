@@ -1,16 +1,17 @@
 import torch
 from tqdm import tqdm
 import numpy as np
+from sklearn.metrics import roc_auc_score
 
 
-def fit(model, train_loader, val_loader, optimizer, loss_function, metric_tracker, early_stopping_tracker, max_epochs=1):
-    """General-purpose training loop for a pytorch model."""
+def fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_tracker, val_metric_tracker, early_stopping_tracker, max_epochs=1):
+    """Training loop for a pytorch model."""
     for epoch in range(max_epochs):
         # Training
         for X, y in tqdm(train_loader):
             output = model(X)
             loss = loss_function(output, y)
-            metric_tracker.add_train(output.item(), y.item(), loss.item())
+            train_metric_tracker.add(output.item(), y.item(), loss.item())
             loss.backward()
             optimizer.step()
         # Validation
@@ -18,8 +19,9 @@ def fit(model, train_loader, val_loader, optimizer, loss_function, metric_tracke
             for X, y in tqdm(val_loader):
                 output = model(X)
                 loss = loss_function(output, y)
-                metric_tracker.add_val(output.item(), y.item(), loss.item())
-        metric_tracker.end_epoch(epoch)
+                val_metric_tracker.add(output.item(), y.item(), loss.item())
+        train_metric_tracker.end_epoch()
+        val_metric_tracker.end_epoch()
         if early_stopping_tracker(metric_tracker.val_metric[-1]):
             break
 
@@ -55,9 +57,34 @@ class EarlyStoppingTracker:
         return False
 
 
+def sigmoid(x):
+    return 1/(1 + np.exp(-x))
+
+
 class MetricTracker:
     def __init__(self):
-        pass
+        self.loss_over_time = []
+        self.roc_auc_over_time = []
+        self.per_class_roc_auc_over_time = []
+        self.reset_storage()
+
+    def reset_storage(self):
+        self.loss = 0
+        self.logits = []
+        self.labels = []
+
+    def roc_auc_score(self):
+        all_labels = np.concatenate(self.labels)
+        all_logits = np.concatenate(self.logits)
+        all_probabilities = sigmoid(all_logits)
+        return roc_auc_score(all_labels, all_probabilities, average=None)
+
+    def end_epoch(self):
+        self.loss_over_time.append(self.loss)
+        per_class_roc_auc = self.roc_auc_score()
+        self.per_class_roc_auc_over_time.append(per_class_roc_auc)
+        self.roc_auc_over_time.append(np.mean(per_class_roc_auc))
+        self.reset_storage()
 
 
 
