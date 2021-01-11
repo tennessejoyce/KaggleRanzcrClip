@@ -1,10 +1,10 @@
 from torch.nn import Conv2d, Linear, Sequential
 
 
-def Resnet18(out_features=11):
+def Resnet18(out_features=11, pretrained=True):
     """Modifies the Resnet architecture for a greyscale image and specified number of output features."""
     from torchvision.models import resnet18
-    model = resnet18()
+    model = resnet18(pretrained=pretrained)
     model.conv1 = Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
     model.fc = Linear(in_features=512, out_features=out_features, bias=True)
     return model
@@ -20,10 +20,18 @@ def EfficientNetB0(out_features=11):
     # model = Sequential(*(list(model.children())[:-1]))
     return model
 
-def Resnet50(out_features=11):
+def Resnet50(out_features=11, pretrained=True):
     """Modifies the Resnet architecture for a greyscale image and specified number of output features."""
     from torchvision.models import resnet50
-    model = resnet50()
+    model = resnet50(pretrained=pretrained)
     model.conv1 = Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
     model.fc = Linear(in_features=2048, out_features=out_features, bias=True)
+    return model
+
+def Resnet18_448(out_features=11):
+    """Modifies the Resnet architecture for a greyscale image and specified number of output features."""
+    from torchvision.models import resnet18
+    model = resnet18()
+    model.conv1 = Conv2d(1, 64, kernel_size=(7, 7), stride=(4, 4), padding=(3, 3), bias=False)
+    model.fc = Linear(in_features=512, out_features=out_features, bias=True)
     return model

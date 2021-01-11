@@ -15,7 +15,8 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
 
     # Set hyperparameters
-    architecture = Resnet18
+    architecture = Resnet50
+    resolution = 224
     batch_size = 32
     max_epochs = 10
     patience = max_epochs
@@ -23,7 +24,8 @@ if __name__ == '__main__':
 
     # Load the data
     print('Loading dataset...')
-    train_dataset, val_dataset = load_dataset(stage='train', drop_fraction=0, val_type='split', val_fraction=0.2)
+    train_dataset, val_dataset = load_dataset(stage='train', drop_fraction=0, resolution=resolution,
+                                              val_type='split', val_fraction=0.2)
     train_loader = DataLoader(train_dataset, **data_loader_kwargs)
     val_loader = DataLoader(val_dataset, **data_loader_kwargs)
 
