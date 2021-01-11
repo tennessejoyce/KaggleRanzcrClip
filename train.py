@@ -14,8 +14,9 @@ if __name__ == '__main__':
     print(f'Running on {device}')
 
     # Set hyperparameters
-    batch_size = 48
-    num_epochs = 2
+    batch_size = 50
+    patience = 3
+    max_epochs = 100
     data_loader_kwargs = {'batch_size': batch_size, 'shuffle': True}
 
     # Load the data
@@ -33,12 +34,12 @@ if __name__ == '__main__':
     print('Setting hyperparameters...')
     loss_function = BCEWithLogitsLoss()
     optimizer = AdamW(model.parameters(), lr=1e-3)
-    early_stopping_tracker = EarlyStoppingTracker(patience=3, minimize=False, saved_model_file=f'saved_models/{int(time())}.pt')
+    early_stopping_tracker = EarlyStoppingTracker(patience=patience, minimize=False, saved_model_file=f'saved_models/{int(time())}.pt')
     train_metric_tracker = MetricTracker(name='train')
     val_metric_tracker = MetricTracker(name='validation')
 
     print('Training model...')
     fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_tracker,
-        val_metric_tracker, early_stopping_tracker, max_epochs=100)
+        val_metric_tracker, early_stopping_tracker, max_epochs=max_epochs)
 
     print('Finished training')
