@@ -1,43 +1,55 @@
 import torch
 from xray_dataset import load_dataset
-from torch.utils.data import DataLoader
 from torch.nn import BCEWithLogitsLoss
 from torch.optim import SGD
-from resnet_model import get_model
-from tqdm import tqdm
+from architectures import EfficientNetB0
+from torch.utils.data import DataLoader
+from training_loops import *
 
 if __name__ == '__main__':
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # device = "cpu"
-    print(device)
+    print(f'Running on {device}')
 
     # Set hyperparameters
-    batch_size =16
+    batch_size = 48
     num_epochs = 2
+    data_loader_kwargs = {'batch_size': batch_size, 'shuffle': True}
 
     # Load the data
-    train_dataset, _ = load_dataset(stage='train', val_fraction=0.8)
-    train_dataset.ready(device)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
+    print('Loading dataset...')
+    train_dataset, val_dataset = load_dataset(stage='train', drop_fraction=0, val_type='split', val_fraction=0.2)
+    train_loader = DataLoader(train_dataset, **data_loader_kwargs)
+    val_loader = DataLoader(val_dataset, **data_loader_kwargs)
+
 
     # Load the model
-    model = get_model().float().to(device)
+    print('Loading model...')
+    model = EfficientNetB0().float().to(device)
 
     # Specify the optimizer and loss function
+    print('Setting hyperparameters...')
     loss_function = BCEWithLogitsLoss()
-    optimizer = SGD(model.parameters(), lr=0.001, momentum=0.9)
+    optimizer = SGD(model.parameters(), lr=1e-3, momentum=0.9)
+    early_stopping_tracker = EarlyStoppingTracker(patience=2, minimize=False)
+    train_metric_tracker = MetricTracker(name='train')
+    val_metric_tracker = MetricTracker(name='validation')
 
-    for epoch in range(num_epochs):
-        print(f'Starting epoch {epoch}...')
-        train_loss = 0
-        for i, (X, y) in tqdm(enumerate(train_loader), total=len(train_loader)):
-            optimizer.zero_grad()
-            output = model(X)
-            loss = loss_function(output, y)
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
-        print(f'Epoch {epoch} train loss: {train_loss/i}')
+    print('Training model...')
+    fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_tracker,
+        val_metric_tracker, early_stopping_tracker, max_epochs=50)
 
+    print('Finished training')
 
+    #
+    # for epoch in range(num_epochs):
+    #     print(f'Starting epoch {epoch}...')
+    #     train_loss = 0
+    #     for i, (X, y) in tqdm(enumerate(train_loader), total=len(train_loader)):
+    #         optimizer.zero_grad()
+    #         output = model(X)
+    #         loss = loss_function(output, y)
+    #         loss.backward()
+    #         optimizer.step()
+    #         train_loss += loss.item()

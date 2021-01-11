@@ -5,6 +5,14 @@ import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+def random_mask(length, num_false):
+    """Returns a boolean array of specified length, with specified number of false elements."""
+    mask = np.ones(length)
+    mask[:num_false]=0
+    np.random.shuffle(mask)
+    return mask.astype(bool)
+
+
 
 def read_image(image_file, resolution):
     """Reads in the xray image from a file, resizes, and returns an nparray."""
@@ -39,14 +47,19 @@ def load_dataset(stage='train', resolution=224, val_type=None, val_fraction=0.2,
     patients, chosen at random, who are assigned to the validation set."""
     # Read in the tabular data, with the instance_id as the index column.
     df = pd.read_csv(f'data/{stage}.csv', index_col=0)
-    # Drop some fraction of the rows for testing purposes.
-    if drop_fraction > 0:
-        df = df.sample(frac=1 - drop_fraction)
     # Separate out the PatientID column, leaving only the binary targets.
     patient_id = df.pop('PatientID')
     # Loop over rows, building up the image and target data into lists.
     target_data = df.values
     image_data = read_all_images(stage='train', instance_ids=df.index, resolution=resolution)
+
+
+    # Drop some fraction of the rows for testing purposes.
+    mask = random_mask(df.shape[0], int(df.shape[0]*drop_fraction))
+    patient_id = patient_id.iloc[mask]
+    target_data = target_data[mask]
+    image_data = image_data[mask]
+
     if val_type is None:
         return XRayDataset(image_data, target_data)
     elif val_type == 'split':
@@ -81,3 +94,4 @@ class XRayDataset(Dataset):
 
     def __len__(self):
         return self.image_data.shape[0]
+

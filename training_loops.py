@@ -8,23 +8,26 @@ def fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_
     """Training loop for a pytorch model."""
     for epoch in range(max_epochs):
         # Training
+        model.train()
         for X, y in tqdm(train_loader):
+            optimizer.zero_grad()
             output = model(X)
             loss = loss_function(output, y)
-            train_metric_tracker.add(output.item(), y.item(), loss.item())
+            train_metric_tracker.add(output, y, loss)
             loss.backward()
             optimizer.step()
         # Validation
+        model.eval()
         with torch.no_grad():
             for X, y in tqdm(val_loader):
                 output = model(X)
                 loss = loss_function(output, y)
-                val_metric_tracker.add(output.item(), y.item(), loss.item())
+                val_metric_tracker.add(output, y, loss)
         # End of epoch
         train_metric_tracker.end_epoch()
         val_metric_tracker.end_epoch()
         # Check for early stopping condition
-        if early_stopping_tracker(val_metric_tracker.loss_over_time[-1]):
+        if early_stopping_tracker(val_metric_tracker.roc_auc_over_time[-1]):
             break
 
 
@@ -64,7 +67,8 @@ def sigmoid(x):
 
 
 class MetricTracker:
-    def __init__(self):
+    def __init__(self, name):
+        self.name = name
         self.loss_over_time = []
         self.roc_auc_over_time = []
         self.per_class_roc_auc_over_time = []
@@ -72,13 +76,19 @@ class MetricTracker:
 
     def reset_storage(self):
         self.loss = 0
-        self.logits = []
+        self.probabilities = []
         self.labels = []
+
+    def add(self, output, y, loss):
+        self.probabilities.append(sigmoid(output.detach().cpu().numpy()))
+        self.labels.append(y.detach().cpu().numpy())
+        self.loss += loss.item() * self.labels[-1].shape[0]
 
     def roc_auc_score(self):
         all_labels = np.concatenate(self.labels)
-        all_logits = np.concatenate(self.logits)
-        all_probabilities = sigmoid(all_logits)
+        all_probabilities = np.concatenate(self.probabilities)
+        # Remember the total number of samples, to be used when averaging the loss.
+        self.num_samples = all_labels.shape[0]
         return roc_auc_score(all_labels, all_probabilities, average=None)
 
     def end_epoch(self):
@@ -86,6 +96,7 @@ class MetricTracker:
         per_class_roc_auc = self.roc_auc_score()
         self.per_class_roc_auc_over_time.append(per_class_roc_auc)
         self.roc_auc_over_time.append(np.mean(per_class_roc_auc))
+        print(f'Epoch {len(self.loss_over_time)} {self.name} loss: {self.loss / self.num_samples}  ROC-AUC: {self.roc_auc_over_time[-1]}')
         self.reset_storage()
 
 
