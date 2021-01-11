@@ -1,10 +1,11 @@
 import torch
 from xray_dataset import load_dataset
 from torch.nn import BCEWithLogitsLoss
-from torch.optim import SGD
+from torch.optim import AdamW
 from architectures import EfficientNetB0
 from torch.utils.data import DataLoader
 from training_loops import *
+from time import time
 
 if __name__ == '__main__':
 
@@ -31,25 +32,13 @@ if __name__ == '__main__':
     # Specify the optimizer and loss function
     print('Setting hyperparameters...')
     loss_function = BCEWithLogitsLoss()
-    optimizer = SGD(model.parameters(), lr=1e-3, momentum=0.9)
-    early_stopping_tracker = EarlyStoppingTracker(patience=2, minimize=False)
+    optimizer = AdamW(model.parameters(), lr=1e-3)
+    early_stopping_tracker = EarlyStoppingTracker(patience=3, minimize=False, saved_model_file=f'saved_models/{int(time())}.pt')
     train_metric_tracker = MetricTracker(name='train')
     val_metric_tracker = MetricTracker(name='validation')
 
     print('Training model...')
     fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_tracker,
-        val_metric_tracker, early_stopping_tracker, max_epochs=50)
+        val_metric_tracker, early_stopping_tracker, max_epochs=100)
 
     print('Finished training')
-
-    #
-    # for epoch in range(num_epochs):
-    #     print(f'Starting epoch {epoch}...')
-    #     train_loss = 0
-    #     for i, (X, y) in tqdm(enumerate(train_loader), total=len(train_loader)):
-    #         optimizer.zero_grad()
-    #         output = model(X)
-    #         loss = loss_function(output, y)
-    #         loss.backward()
-    #         optimizer.step()
-    #         train_loss += loss.item()

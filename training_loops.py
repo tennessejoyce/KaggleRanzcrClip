@@ -27,14 +27,14 @@ def fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_
         train_metric_tracker.end_epoch()
         val_metric_tracker.end_epoch()
         # Check for early stopping condition
-        if early_stopping_tracker(val_metric_tracker.roc_auc_over_time[-1]):
+        if early_stopping_tracker(val_metric_tracker.roc_auc_over_time[-1], model):
             break
 
 
 class EarlyStoppingTracker:
     """A class to keep track of the metric over time, stopping training when
     any chosen metric stops improving."""
-    def __init__(self, patience=0, minimize=True):
+    def __init__(self, patience=0, minimize=True, saved_model_file='saved_models/model.pt'):
         """Patience is the number of epochs to wait before pausing. The default
         of patience=0 means any time the metric fails to improve over the previous
         epoch, training will immediately halt.
@@ -44,13 +44,16 @@ class EarlyStoppingTracker:
         self.sign = (1 if minimize else -1)
         self.current_best = np.inf
         self.current_patience = self.patience
+        self.saved_model_file = saved_model_file
 
-    def __call__(self, metric):
+    def __call__(self, metric, model):
         if metric * self.sign < self.current_best:
             # Overwrite the previous best metric
             self.current_best = metric * self.sign
             # Reset patience counter
             self.current_patience = self.patience
+            # Save the model to a file
+            torch.save(model, self.saved_model_file)
         else:
             # No improvement to the metric, decrement patience.
             self.current_patience -= 1
