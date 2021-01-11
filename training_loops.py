@@ -32,11 +32,12 @@ from torch.nn import BCEWithLogitsLoss
 #             break
 
 
-def fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_function,
+def fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_function, scheduler,
                         train_metric_tracker, val_metric_tracker, early_stopping_tracker, max_epochs=1):
     """Training loop for a pytorch model. Uses half precision when possible with AMP."""
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(max_epochs):
+        print(f'Epoch {epoch+1} Learning rate {optimizer.param_groups[0]["lr"]}')
         # Training
         model.train()
         for X, y, w in tqdm(train_loader):
@@ -55,6 +56,7 @@ def fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_functio
                 output = model(X)
                 loss = loss_function(output, y, w)
                 val_metric_tracker.add(output, y, loss)
+        scheduler.step()
         # End of epoch
         train_metric_tracker.end_epoch()
         val_metric_tracker.end_epoch()
