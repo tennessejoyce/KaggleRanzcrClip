@@ -86,11 +86,14 @@ class XRayDataset(Dataset):
         self.target_data = torch.from_numpy(target_data)
         # Add an extra index for channels (gray scale).
         self.image_data = torch.from_numpy(image_data[:, None, :, :])
+        class_proportions = torch.from_numpy(np.mean(target_data, axis=0))
+        self.weights = 2 * (self.target_data/class_proportions + (1-self.target_data)/(1-class_proportions))
 
     def __getitem__(self, key):
         image_batch = self.image_data[key].float().cuda()
         target_batch = self.target_data[key].float().cuda()
-        return image_batch, target_batch
+        weights_batch = self.weights[key].float().cuda()
+        return image_batch, target_batch, weights_batch
 
     def __len__(self):
         return self.image_data.shape[0]

@@ -2,46 +2,48 @@ import torch
 from tqdm import tqdm
 import numpy as np
 from sklearn.metrics import roc_auc_score
+from torch.nn import BCEWithLogitsLoss
 
 
-def fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_tracker, val_metric_tracker, early_stopping_tracker, max_epochs=1):
-    """Training loop for a pytorch model."""
-    for epoch in range(max_epochs):
-        # Training
-        model.train()
-        for X, y in tqdm(train_loader):
-            optimizer.zero_grad()
-            output = model(X)
-            loss = loss_function(output, y)
-            train_metric_tracker.add(output, y, loss)
-            loss.backward()
-            optimizer.step()
-        # Validation
-        model.eval()
-        with torch.no_grad():
-            for X, y in tqdm(val_loader):
-                output = model(X)
-                loss = loss_function(output, y)
-                val_metric_tracker.add(output, y, loss)
-        # End of epoch
-        train_metric_tracker.end_epoch()
-        val_metric_tracker.end_epoch()
-        # Check for early stopping condition
-        if early_stopping_tracker(val_metric_tracker.roc_auc_over_time[-1], model):
-            break
+# def fit(model, train_loader, val_loader, optimizer, loss_function, train_metric_tracker, val_metric_tracker, early_stopping_tracker, max_epochs=1):
+#     """Training loop for a pytorch model."""
+#     for epoch in range(max_epochs):
+#         # Training
+#         model.train()
+#         for X, y in tqdm(train_loader):
+#             optimizer.zero_grad()
+#             output = model(X)
+#             loss = loss_function(output, y)
+#             train_metric_tracker.add(output, y, loss)
+#             loss.backward()
+#             optimizer.step()
+#         # Validation
+#         model.eval()
+#         with torch.no_grad():
+#             for X, y in tqdm(val_loader):
+#                 output = model(X)
+#                 loss = loss_function(output, y)
+#                 val_metric_tracker.add(output, y, loss)
+#         # End of epoch
+#         train_metric_tracker.end_epoch()
+#         val_metric_tracker.end_epoch()
+#         # Check for early stopping condition
+#         if early_stopping_tracker(val_metric_tracker.roc_auc_over_time[-1], model):
+#             break
 
 
-def fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_function, train_metric_tracker, val_metric_tracker, early_stopping_tracker, max_epochs=1):
+def fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_function,
+                        train_metric_tracker, val_metric_tracker, early_stopping_tracker, max_epochs=1):
     """Training loop for a pytorch model. Uses half precision when possible with AMP."""
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(max_epochs):
         # Training
         model.train()
-        for X, y in tqdm(train_loader):
+        for X, y, w in tqdm(train_loader):
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
                 output = model(X)
-                loss = loss_function(output, y)
+                loss = loss_function(output, y, w)
             train_metric_tracker.add(output, y, loss)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -49,9 +51,9 @@ def fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_functio
         # Validation
         model.eval()
         with torch.no_grad():
-            for X, y in tqdm(val_loader):
+            for X, y, w in tqdm(val_loader):
                 output = model(X)
-                loss = loss_function(output, y)
+                loss = loss_function(output, y, w)
                 val_metric_tracker.add(output, y, loss)
         # End of epoch
         train_metric_tracker.end_epoch()
@@ -131,6 +133,22 @@ class MetricTracker:
         self.roc_auc_over_time.append(np.mean(per_class_roc_auc))
         print(f'Epoch {len(self.loss_over_time)} {self.name} loss: {self.loss / self.num_samples}  ROC-AUC: {self.roc_auc_over_time[-1]}')
         self.reset_storage()
+
+
+class WeightedBCELossLogits:
+    def __init__(self, weighted = True):
+        self.weighted = weighted
+        if self.weighted:
+            self.base_loss = BCEWithLogitsLoss(reduction='none')
+        else:
+            self.base_loss = BCEWithLogitsLoss()
+
+    def __call__(self, output, y, w):
+        if self.weighted:
+            individual_losses = self.base_loss(output, y)
+            return torch.mean(individual_losses * w)
+        else:
+            return self.base_loss(output, y)
 
 
 

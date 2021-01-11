@@ -1,6 +1,5 @@
 import torch
 from xray_dataset import load_dataset
-from torch.nn import BCEWithLogitsLoss
 from torch.optim import AdamW
 from architectures import EfficientNetB0, Resnet18, Resnet50
 from torch.utils.data import DataLoader
@@ -15,7 +14,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
 
     # Set hyperparameters
-    architecture = Resnet50  # EfficientNetB0
+    architecture = Resnet18  # EfficientNetB0
     batch_size = 100
     patience = 2
     max_epochs = 100
@@ -33,8 +32,8 @@ if __name__ == '__main__':
 
     # Specify the optimizer and loss function
     print('Setting hyperparameters...')
-    loss_function = BCEWithLogitsLoss()
-    optimizer = AdamW(model.parameters(), lr=1e-3)
+    loss_function = WeightedBCELossLogits(weighted=True)
+    optimizer = AdamW(model.parameters(), lr=1e-4)
     early_stopping_tracker = EarlyStoppingTracker(patience=patience, minimize=False,
                                                   saved_model_file=f'saved_models/{int(time())}.pt')
     train_metric_tracker = MetricTracker(name='train')
