@@ -31,23 +31,25 @@ def read_all_images(stage, instance_ids, resolution):
     return image_data
 
 
-def load_dataset(stage='train', resolution=224, val_fraction=0, random_state=0):
-    """Loads both the images and the binary targets into a Pytorch Dataset object.
+def load_dataset(stage='train', resolution=224, val_type=None, val_fraction=0.2, val_num_folds=5, random_state=0,
+                 drop_fraction=0):
+    """Loads both the images and the binary targets into numpy arrays.
     Also splits training data into traning and validation, keeping rows from the same
     patient together to avoid leakage. Validation fraction specifies the fraction of
     patients, chosen at random, who are assigned to the validation set."""
     # Read in the tabular data, with the instance_id as the index column.
     df = pd.read_csv(f'data/{stage}.csv', index_col=0)
+    # Drop some fraction of the rows for testing purposes.
+    if drop_fraction > 0:
+        df = df.sample(frac=1 - drop_fraction)
     # Separate out the PatientID column, leaving only the binary targets.
     patient_id = df.pop('PatientID')
     # Loop over rows, building up the image and target data into lists.
     target_data = df.values
     image_data = read_all_images(stage='train', instance_ids=df.index, resolution=resolution)
-    # If we're not doing validation, just return one dataset.
-    if val_fraction == 0:
+    if val_type is None:
         return XRayDataset(image_data, target_data)
-    # Otherwise split patients into train and validation, and return two datasets.
-    else:
+    elif val_type == 'split':
         unique_ids = patient_id.unique()
         val_size = int(val_fraction * len(unique_ids))
         rng = np.random.default_rng(random_state)
@@ -55,13 +57,17 @@ def load_dataset(stage='train', resolution=224, val_fraction=0, random_state=0):
         validation_idx = patient_id.isin(validation_patients)
         train_idx = ~validation_idx
         train_dataset = XRayDataset(image_data[train_idx], target_data[train_idx])
-        validation_dataset = XRayDataset(image_data[validation_idx], target_data[validation_idx])
-        return train_dataset, validation_dataset
+        val_dataset = XRayDataset(image_data[validation_idx], target_data[validation_idx])
+        return train_dataset, val_dataset
+    else:
+        print(f'{val_type} cross validation has not been implemented yet.')
+        return XRayDataset(image_data, target_data)
 
 
-class XRayDataset (Dataset):
+class XRayDataset(Dataset):
     """Pytorch dataset that stores both the image data and binary target data
     in memory as numpy arrays."""
+
     def __init__(self, image_data, target_data):
         assert image_data.shape[0] == target_data.shape[0]
         self.target_data = torch.from_numpy(target_data)
@@ -69,12 +75,9 @@ class XRayDataset (Dataset):
         self.image_data = torch.from_numpy(image_data[:, None, :, :])
 
     def __getitem__(self, key):
-        image_batch = self.image_data[key]
-        return image_batch, self.target_data[key]
+        image_batch = self.image_data[key].float().cuda()
+        target_batch = self.target_data[key].float().cuda()
+        return image_batch, target_batch
 
     def __len__(self):
         return self.image_data.shape[0]
-
-    def ready(self, device):
-        self.target_data = self.target_data.float().to(device)
-        self.image_data = self.image_data.float().to(device)
