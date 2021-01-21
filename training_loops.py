@@ -32,6 +32,22 @@ from torch.nn import BCEWithLogitsLoss
 #             break
 
 
+def freeze_hidden_layers(model):
+    """
+    Freeze all layers except the final output layer.
+    """
+    for p in model.parameters():
+        p.requires_grad = False
+    for p in model.fc.parameters():
+        p.requires_grad = True
+
+def unfreeze(model):
+    """
+    Unfreezes all parameters in a model.
+    """
+    for p in model.parameters():
+        p.requires_grad = True
+
 def fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_function, scheduler,
                         train_metric_tracker, val_metric_tracker, early_stopping_tracker, max_epochs=1):
     """Training loop for a pytorch model. Uses half precision when possible with AMP."""

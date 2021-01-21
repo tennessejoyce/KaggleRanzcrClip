@@ -4,18 +4,22 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
+from torchvision.transforms import Normalize
 
 def random_mask(length, num_false):
-    """Returns a boolean array of specified length, with specified number of false elements."""
+    """
+    Returns a boolean array of specified length, with specified number of false elements.
+    """
     mask = np.ones(length)
     mask[:num_false]=0
     np.random.shuffle(mask)
     return mask.astype(bool)
 
 
-
 def read_image(image_file, resolution):
-    """Reads in the xray image from a file, resizes, and returns an nparray."""
+    """
+    Reads in the xray image from a file, resizes, and returns an nparray.
+    """
     try:
         image = Image.open(image_file)
         image = image.resize((resolution, resolution), Image.BILINEAR)
@@ -41,10 +45,12 @@ def read_all_images(stage, instance_ids, resolution):
 
 def load_dataset(stage='train', resolution=224, val_type=None, val_fraction=0.2, val_num_folds=5, random_state=0,
                  drop_fraction=0):
-    """Loads both the images and the binary targets into numpy arrays.
+    """
+    Loads both the images and the binary targets into numpy arrays.
     Also splits training data into traning and validation, keeping rows from the same
     patient together to avoid leakage. Validation fraction specifies the fraction of
-    patients, chosen at random, who are assigned to the validation set."""
+    patients, chosen at random, who are assigned to the validation set.
+    """
     # Read in the tabular data, with the instance_id as the index column.
     df = pd.read_csv(f'data/{stage}.csv', index_col=0)
     # Separate out the PatientID column, leaving only the binary targets.
@@ -78,23 +84,39 @@ def load_dataset(stage='train', resolution=224, val_type=None, val_fraction=0.2,
 
 
 class XRayDataset(Dataset):
-    """Pytorch dataset that stores both the image data and binary target data
-    in memory as numpy arrays."""
+    """
+    Pytorch dataset that stores both the image data and binary target data
+    in memory as numpy arrays.
+    """
 
-    def __init__(self, image_data, target_data):
+    def __init__(self, image_data, target_data, grayscale=False):
         assert image_data.shape[0] == target_data.shape[0]
         self.target_data = torch.from_numpy(target_data)
         # Add an extra index for channels (gray scale).
         self.image_data = torch.from_numpy(image_data[:, None, :, :])
         class_proportions = torch.from_numpy(np.mean(target_data, axis=0))
         self.weights = 0.5 * (self.target_data/class_proportions + (1-self.target_data)/(1-class_proportions))
+        # Standard imagenet normalizer
+        if grayscale:
+            self.normalzer = lambda x: x
+            self.channels = 1
+        else:
+            self.normalizer = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            self.channels = 3
 
     def __getitem__(self, key):
-        image_batch = self.image_data[key].float().cuda()/256
+        image_batch = self.to_normalized_rgb(self.image_data[key].float()).cuda()
         target_batch = self.target_data[key].float().cuda()
         weights_batch = self.weights[key].float().cuda()
         return image_batch, target_batch, weights_batch
 
     def __len__(self):
         return self.image_data.shape[0]
+
+    def to_normalized_rgb(self, grayscale_image):
+        """
+        Converts a grayscale image (as a 2d nparray) into RGB, and applies the Imagenet normalization.
+        """
+        rgb_image = grayscale_image.repeat_interleave(self.channels, 0)
+        return self.normalizer(rgb_image)
 

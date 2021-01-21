@@ -18,8 +18,9 @@ if __name__ == '__main__':
     architecture = Resnet50
     resolution = 224
     batch_size = 32
-    max_epochs = 10
-    patience = max_epochs
+    phase_1_max_epochs = 3
+    phase_2_max_epochs = 10
+    patience = phase_1_max_epochs + phase_1_max_epochs
     data_loader_kwargs = {'batch_size': batch_size, 'shuffle': True}
 
     # Load the data
@@ -36,15 +37,25 @@ if __name__ == '__main__':
     # Specify the optimizer and loss function
     print('Setting hyperparameters...')
     loss_function = WeightedBCELossLogits(weighted=False)
-    optimizer = Adam(model.parameters(), lr=1e-3)
+    optimizer = AdamW(model.parameters(), lr=1e-3)
     early_stopping_tracker = EarlyStoppingTracker(patience=patience, minimize=False,
                                                   saved_model_file=f'saved_models/{int(time())}.pt')
-    scheduler = CosineAnnealingLR(optimizer, T_max=max_epochs)
+    scheduler = CosineAnnealingLR(optimizer, T_max=phase_1_max_epochs)
     train_metric_tracker = MetricTracker(name='train')
     val_metric_tracker = MetricTracker(name='validation')
 
-    print('Training model...')
+
+
+    print('Training output layer...')
+    freeze_hidden_layers(model)
     fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_function, scheduler, train_metric_tracker,
-                        val_metric_tracker, early_stopping_tracker, max_epochs=max_epochs)
+                        val_metric_tracker, early_stopping_tracker, max_epochs=phase_1_max_epochs)
+
+    print('Training full model...')
+    unfreeze(model)
+    # Reset the scheduler
+    scheduler = CosineAnnealingLR(optimizer, T_max=phase_2_max_epochs)
+    fit_mixed_precision(model, train_loader, val_loader, optimizer, loss_function, scheduler, train_metric_tracker,
+                        val_metric_tracker, early_stopping_tracker, max_epochs=phase_2_max_epochs)
 
     print('Finished training')
