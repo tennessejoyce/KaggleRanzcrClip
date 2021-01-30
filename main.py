@@ -24,11 +24,11 @@ def feature_extraction(mode='cnn_pca'):
 
 
 namespace = feature_extraction()
-namespace.val_fraction = 0.2
 namespace.random_state = 100
 namespace.max_pca_features = 64
+namespace.cross_val_k = 5
 del namespace.cnn
 print(namespace.__dict__.keys())
-#namespace.load_model('LogisticRegression', max_iter=1000).
-namespace.load_model('RandomForest', n_estimators=100, class_weight='balanced', min_samples_split=100, max_depth=4)
-namespace.model_training()
+namespace.load_model('LogisticRegression', max_iter=100)
+#namespace.load_model('RandomForest', n_estimators=10, class_weight='balanced', min_samples_split=100, max_depth=4)
+namespace.model_training_kfold()

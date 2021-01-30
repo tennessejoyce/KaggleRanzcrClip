@@ -9,6 +9,7 @@ from PIL import Image
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
 
+
 def read_image(image_file, resolution):
     """Reads in the xray image from a file and returns an nparray."""
     try:
@@ -17,6 +18,17 @@ def read_image(image_file, resolution):
     except:
         print(f'Failed to load {image_file}')
         return np.zeros((resolution, resolution), dtype=np.uint8)
+
+
+def assign_folds(counts_df, k):
+    """Assign patients to folds while balancing the number of samples (not patients) per fold."""
+    assignments = {}
+    totals = [0] * k
+    for key, value in counts_df.sort_values().iteritems():
+        i_min = np.argmin(totals)
+        assignments[key] = i_min
+        totals[i_min] += value
+    return pd.Series(assignments)
 
 
 class MLNamespace:
@@ -93,7 +105,7 @@ class MLNamespace:
 
     def transform_incremental_pca(self):
         pca_out = self.pca.transform(self.pca_in)
-        self.pca_features = pd.DataFrame(pca_out, index=self.train_df.index)
+        self.pca_features = pd.DataFrame(pca_out, index=self.df.index)
 
     # Methods for loading data
 
@@ -102,12 +114,12 @@ class MLNamespace:
         setattr(self, name, pd.read_csv(filename, **kwargs))
 
     def load_train_csv(self):
-        self.read_csv('train_df', f'{self.data_dir}/train.csv', index_col=0)
+        self.read_csv('df', f'{self.data_dir}/train.csv', index_col=0)
 
     def load_images(self, stage, resolution):
         directory = f'{self.data_dir}/{stage}_{resolution}'
         images = []
-        for instance_id in self.train_df.index:
+        for instance_id in self.df.index:
             image_file = f'{directory}/{instance_id}.jpg'
             images.append(read_image(image_file, resolution))
         self.images = np.stack(images)
@@ -116,10 +128,12 @@ class MLNamespace:
 
     def postprocess_features(self):
         self.pca_features = self.pca_features.sort_index()
-        self.train_df = self.train_df.sort_index()
+        self.df = self.train_df.sort_index()
+
+    def split_features(self):
         self.X = self.pca_features.values[:, :self.max_pca_features]
-        self.patient_id = self.train_df.pop('PatientID')
-        self.y = self.train_df.values
+        self.patient_id = self.df.pop('PatientID')
+        self.y = self.df.values
 
     def load_model(self, name, **kwargs):
         if name == 'LogisticRegression':
@@ -139,29 +153,45 @@ class MLNamespace:
         self.evaluation_score = roc_auc_score(self.y, y_prob)
         return self.evaluation_score
 
-    def train_test_split(self):
+    def predict_proba(self):
+        y_prob = self.model.predict_proba(self.X)[:, 1]
+        return pd.Series(y_prob, index=self.patient_id.index)
+
+    def set_train_and_val(self, train_mask, val_mask):
+        train, test = copy(self), copy(self)
+        train.df = train.df[train_mask]
+        test.df = test.df[val_mask]
+        return train, test
+
+    def train_val_split(self):
         """Splits the namespace into two, for training and validation."""
         # First, decide the indices for the split.
         unique_ids = self.patient_id.unique()
         val_size = int(self.val_fraction * len(unique_ids))
         rng = np.random.default_rng(self.random_state)
-        validation_patients = rng.choice(unique_ids, val_size)
-        validation_idx = self.patient_id.isin(validation_patients)
-        train_idx = ~validation_idx
+        val_patients = rng.choice(unique_ids, val_size)
+        val_mask = self.patient_id.isin(val_patients)
+        train_mask = ~val_mask
+        return self.set_train_and_val(train_mask, val_mask)
 
-        # Then, split the data into two namespaces.
-        train, test = copy(self), copy(self)
-        train.X = train.X[train_idx]
-        train.y = train.y[train_idx]
-        test.X = test.X[~train_idx]
-        test.y = test.y[~train_idx]
 
-        return train, test
+    def kfold_cross_validation(self):
+        """Implements k-fold cross validation."""
+        # Series that assigns each patient id an integer from 0 to k-1.
+        assignments = assign_folds(self.patient_id.value_counts(), self.cross_val_k)
+        for i in range(self.cross_val_k):
+            # Find patient ids in the ith fold.
+            val_patients = assignments.index.where(assignments == i)
+            # Use that to create a boolean mask over the samples.
+            val_mask = self.patient_id.isin(val_patients)
+            train_mask = ~val_mask
+            # Use the mask to split into train and validation.
+            yield self.set_train_and_val(train_mask, val_mask)
 
 
     def multitarget_split(self):
         """Splits a multi-target binary classification problem into many separate binary problems."""
-        for i in range(self.y.shape[1]):
+        for i in range(self.df.shape[1]):
             binary_problem = copy(self)
             binary_problem.y = binary_problem.y[:, i]
             yield  binary_problem
@@ -174,8 +204,8 @@ class MLNamespace:
         self.instantiate_incremental_pca()
         for stage in ['fit', 'transform']:
             target_cols = [] if stage == 'fit' else ['pca_features']
-            num_batches = (self.train_df.shape[0] - 1) // self.batch_size + 1
-            batches = self.batch_apply(batch_size=self.batch_size, source_cols=['train_df'], target_cols=target_cols)
+            num_batches = (self.df.shape[0] - 1) // self.batch_size + 1
+            batches = self.batch_apply(batch_size=self.batch_size, source_cols=['df'], target_cols=target_cols)
             for batch in tqdm(batches, total=num_batches):
                 batch.load_images('train', 224)
                 batch.cnn_preprocess_images()
@@ -186,13 +216,15 @@ class MLNamespace:
                 else:
                     batch.transform_incremental_pca()
 
-    def model_training(self):
-        """Train a model"""
+    def model_training_split(self):
+        """Train a model and evaluate on a validation set."""
         self.postprocess_features()
         train_scores = []
         test_scores = []
         for i, target in enumerate(tqdm(self.multitarget_split(), total=self.y.shape[1])):
             train, test = target.train_test_split()
+            train.split_features()
+            test.split_feautures()
             train.fit_model()
             train_score = train.evaluate_model()
             test_score = test.evaluate_model()
@@ -201,3 +233,21 @@ class MLNamespace:
         for i, (train_score, test_score) in enumerate(zip(train_scores,test_scores)):
             print(f'Target {i}:  {train_score:.4f}  {test_score:.4f}')
         print(f'Average:  {np.mean(train_score):.4f}  {np.mean(test_score):.4f}')
+
+    def model_training_kfold(self):
+        """Train a model and evaluate with k-fold cross validation."""
+        self.postprocess_features()
+        self.scores = []
+        for i, target in enumerate(tqdm(self.multitarget_split(), total=self.df.shape[1])):
+            target.out_of_fold_probabilities = []
+            for train, test in target.kfold_cross_validation():
+                train.split_features()
+                test.split_feautures()
+                train.fit_model()
+                test.out_of_fold_probabilities.append(test.predict_proba())
+            target.out_of_fold_probabilities = pd.concat(target.out_of_fold_probabilities, axis=0)
+            self.scores.append(roc_auc_score(target.y, target.out_of_fold_probabilities))
+        for i, score in enumerate(self.scores):
+            print(f'Target {i}:  {score:.4f}')
+        print(f'Average:  {np.mean(self.scores):.4f}')
+
