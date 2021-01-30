@@ -3,6 +3,7 @@
 *.tfrec
 *.csv
 *.npy
+*.p
 .vscode
 .ipynb_checkpoints
 .idea
